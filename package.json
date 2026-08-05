@@ -1,0 +1,19 @@
+{
+  "name": "backend-postgresql",
+  "version": "1.0.0",
+  "description": "postgresql of the backend services",
+  "license": "ISC",
+  "author": "Louis Macjob",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "server": "node --watch --env-file=.env index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "pg": "^8.22.0"
+  }
+}
