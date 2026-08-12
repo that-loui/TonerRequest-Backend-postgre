@@ -7,7 +7,8 @@ const DATA = {
     return rows;
   },
 
-  getColors: async (tonerName) => {
+  // rename to get colorsByTonerName
+  getColorsByTonerName: async (tonerName) => {
     const query = `
       SELECT DISTINCT c.color_name AS "ColorName" 
       FROM color c 
@@ -16,6 +17,13 @@ const DATA = {
       WHERE t.toner_name = $1
     `;
     const { rows } = await pool.query(query, [tonerName]);
+    return rows;
+  },
+
+  // new function to get all colors [done]
+  getAllColors: async () => {
+    const query = `SELECT color_name AS "ColorName" FROM color`;
+    const { rows } = await pool.query(query);
     return rows;
   },
 
@@ -43,7 +51,7 @@ const DATA = {
     department,
     tonerName,
     color,
-    quantity
+    quantity,
   ) => {
     const username = `${fullName}-${email}`;
     const query = `
@@ -85,7 +93,7 @@ const DATA = {
 
     await pool.query(query, [requestedQuantity, stockId]);
     return true;
-  },    
+  },
 
   updateStockAdd: async (stockId, quantity) => {
     const query = `
@@ -96,6 +104,36 @@ const DATA = {
 
     await pool.query(query, [quantity, stockId]);
     return true;
+  },
+  // new function to add a new toner to the toner table
+  addNewToner: async (tonerName, tonerManufacturer) => {
+    const query = `
+      INSERT INTO toner (toner_name, manufacturer) 
+      VALUES ($1, $2) 
+      RETURNING toner_id AS "TonerId"
+    `;
+
+    const { rows } = await pool.query(query, [tonerName, tonerManufacturer]);
+    return rows[0].TonerId;
+  },
+
+  // new function to add a new inventory roll to the toner_stock table
+  addNewTonerToInventory: async (tonerId, colorName, quantity) => {
+    const colorQuery = `SELECT color_id AS "ColorId" FROM color WHERE color_name = $1`;
+    const { rows: colorRows } = await pool.query(colorQuery, [colorName]);
+    if (colorRows.length === 0) {
+      throw new Error(`Color ${colorName} does not exist in the database.`);
+    }
+    const colorId = colorRows[0].ColorId;
+
+    const query = `
+      INSERT INTO toner_stock (toner_id, color_id, quantity) 
+      VALUES ($1, $2, $3) 
+      RETURNING stock_id AS "StockId"
+    `;
+
+    const { rows: stockRows } = await pool.query(query, [tonerId, colorId, quantity]);
+    return stockRows[0].StockId;
   },
 };
 

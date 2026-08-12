@@ -1,4 +1,3 @@
-import { json } from "express";
 import DATA from "./data.js";
 
 export const getTonerData = async (req, res, next) => {
@@ -30,17 +29,19 @@ export const getRequestData = async (req, res, next) => {
 
 export const requestToner = async (req, res, next) => {
   try {
-    const { name, email, department, tonerId, color, quantity } = req.body;
+    const { name, email, department, tonerName, color, quantity } = req.body;
+
     const requestId = await DATA.addRequest(
       name,
       email,
       department,
-      tonerId,
+      tonerName,
       color,
       quantity,
     );
     console.log(requestId);
-    const availableStock = await DATA.getStock(tonerId, color);
+    // DATA.getStock expects (tonerName, color).
+    const availableStock = await DATA.getStock(tonerName, color);
 
     if (!availableStock) {
       return res.status(404).json({
@@ -49,7 +50,8 @@ export const requestToner = async (req, res, next) => {
       });
     }
 
-    if (availableStock.Quantity > quantity) {
+    // treat equal quantity as sufficient to fulfill the request
+    if (availableStock.Quantity >= quantity) {
       await DATA.updateStock(availableStock.StockId, quantity);
       res.status(200).json({
         success: true,
@@ -94,16 +96,59 @@ export const getColorFromToner = async (req, res, next) => {
   try {
     const { tonerName } = req.query;
     if (!tonerName)
-      res
+      return res
         .status(400)
         .json({ success: false, message: "Toner name is required" });
-    const colors = await DATA.getColors(tonerName);
-    if (!colors || colors.length === 0)
-      res.status(404).json({
+    const colors = await DATA.getColorsByTonerName(tonerName);
+    if (!colors || colors.length === 0) {
+      return res.status(404).json({
         success: false,
         message: "No colors found for the specified toner",
       });
+    }
     res.status(200).json(colors);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAllColors = async (req, res, next) => {
+  try {
+    const colors = await DATA.getAllColors();
+    res.status(200).json(colors);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addNewToner = async (req, res, next) => {
+  try {
+    const { tonerName, tonerManufacturer, color, quantity } = req.body;
+
+    // check if toner already exists
+    const existingToner = await DATA.getStock(tonerName, color);
+    if (existingToner) {
+      return res.status(400).json({
+        success: false,
+        message: "Toner with the specified color already exists in inventory.",
+      });
+    }
+
+    const newTonerId = await DATA.addNewToner(tonerName, tonerManufacturer);
+   
+
+    if (!newTonerId) {
+      return res.status(400).json({
+        success: false,
+        message: "Failed to add new toner. Please check your inputs.",
+      });
+    }
+    // add new stock entry for the new toner
+    await DATA.addNewTonerToInventory(newTonerId, color, quantity);
+    res.status(200).json({
+      success: true,
+      message: `New toner added: ${tonerName} - ${color}, Quantity: ${quantity}`,
+    });
   } catch (error) {
     next(error);
   }
