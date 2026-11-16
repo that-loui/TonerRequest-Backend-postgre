@@ -27,11 +27,17 @@ const DATA = {
     return rows;
   },
 
+  // update requests to return selected columns and order by requested_at descending
   requests: async () => {
     const query = `SELECT * FROM request ORDER BY requested_at DESC`;
     const { rows } = await pool.query(query);
     return rows;
   },
+  userRequests: async (userId) => {
+    const { rows } = await pool.query(`SELECT * FROM request WHERE requester_user_id=$1 ORDER BY requested_at DESC`, [userId]);
+    return rows;
+  },
+  // create a new function to get all requests data.
 
   inventory: async () => {
     const query = `
@@ -132,7 +138,11 @@ const DATA = {
       RETURNING stock_id AS "StockId"
     `;
 
-    const { rows: stockRows } = await pool.query(query, [tonerId, colorId, quantity]);
+    const { rows: stockRows } = await pool.query(query, [
+      tonerId,
+      colorId,
+      quantity,
+    ]);
     return stockRows[0].StockId;
   },
 };

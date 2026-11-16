@@ -9,11 +9,19 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
-    "server": "node --watch --env-file=.env index.js"
+    "server": "node --watch --env-file=.env index.js",
+    "migrate": "node scripts/migrate.js",
+    "seed:admins": "node scripts/seed-admins.js",
+    "retry:notifications": "node scripts/retry-notifications.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "express-rate-limit": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "resend": "^6.4.2"
   }
 }
