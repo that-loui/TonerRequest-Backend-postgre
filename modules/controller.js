@@ -1,4 +1,6 @@
 import DATA from "./data.js";
+import pool from "./config.js";
+import { deliverNotification } from "./notifications.js";
 
 export const getTonerData = async (req, res, next) => {
   try {
@@ -20,7 +22,7 @@ export const getInventoryData = async (req, res, next) => {
 
 export const getRequestData = async (req, res, next) => {
   try {
-    const requests = await DATA.requests();
+    const requests = req.user.role === "Employee" ? await DATA.userRequests(req.user.id) : await DATA.requests();
     res.status(200).json(requests);
   } catch (error) {
     next(error);
@@ -28,45 +30,29 @@ export const getRequestData = async (req, res, next) => {
 };
 
 export const requestToner = async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { name, email, department, tonerName, color, quantity } = req.body;
-
-    const requestId = await DATA.addRequest(
-      name,
-      email,
-      department,
-      tonerName,
-      color,
-      quantity,
-    );
-    console.log(requestId);
-    // DATA.getStock expects (tonerName, color).
-    const availableStock = await DATA.getStock(tonerName, color);
-
-    if (!availableStock) {
-      return res.status(404).json({
-        success: false,
-        message: "Request logged, but toner does not exist in inventory.",
-      });
-    }
-
-    // treat equal quantity as sufficient to fulfill the request
-    if (availableStock.Quantity >= quantity) {
-      await DATA.updateStock(availableStock.StockId, quantity);
-      res.status(200).json({
-        success: true,
-        message: "Request logged and inventory updated successfully.",
-      });
-    } else {
-      return res.status(200).json({
-        success: true,
-        message:
-          "Request logged successfully. Awaiting ICT processing due to insufficient stock.",
-      });
-    }
+    const { tonerName, color, quantity } = req.body || {};
+    const amount = Number(quantity);
+    if (!tonerName || !color || !Number.isInteger(amount) || amount < 1 || amount > 100) return res.status(400).json({success:false,message:"Toner, colour and a quantity from 1 to 100 are required."});
+    await client.query("BEGIN");
+    const stock = await client.query(`SELECT ts.stock_id,ts.quantity FROM toner_stock ts JOIN toner t USING(toner_id) JOIN color c USING(color_id) WHERE t.toner_name=$1 AND c.color_name=$2 FOR UPDATE`,[tonerName,color]);
+    if(!stock.rowCount){await client.query("ROLLBACK");return res.status(404).json({success:false,message:"Toner and colour were not found in inventory."});}
+    const status = stock.rows[0].quantity >= amount ? "Approved" : "Pending";
+    const username = `${req.user.fullName}-${req.user.email}`;
+    const saved = await client.query(`INSERT INTO request(username,department,toner,color,quantity,requester_user_id,status) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING request_id`,[username,req.user.department,tonerName,color,amount,req.user.id,status]);
+    if(status === "Approved") await client.query("UPDATE toner_stock SET quantity=quantity-$1 WHERE stock_id=$2",[amount,stock.rows[0].stock_id]);
+    const requestId=saved.rows[0].request_id;
+    const ictEmail=process.env.ICT_NOTIFICATION_EMAIL;
+    if(ictEmail) await client.query("INSERT INTO email_notification(request_id,recipient,notification_type) VALUES($1,$2,'ict') ON CONFLICT(request_id,notification_type) DO NOTHING",[requestId,ictEmail]);
+    await client.query("INSERT INTO email_notification(request_id,recipient,notification_type) VALUES($1,$2,'requester') ON CONFLICT(request_id,notification_type) DO NOTHING",[requestId,req.user.email]);
+    await client.query("COMMIT");
+    setImmediate(async()=>{const {rows}=await pool.query("SELECT notification_id FROM email_notification WHERE request_id=$1 AND status IN ('pending','failed')",[requestId]);for(const row of rows)await deliverNotification(row.notification_id);});
+    res.status(201).json({success:true,requestId,message:status === "Approved"?"Request received and inventory updated successfully.":"Request received and is awaiting ICT processing due to insufficient stock.",status});
   } catch (error) {
+    await client.query("ROLLBACK").catch(()=>{});
     next(error);
-  }
+  } finally {client.release();}
 };
 
 export const updateInventory = async (req, res, next) => {

@@ -1,31 +1,29 @@
-
-
-
 import express from "express";
+import { getTonerData,getInventoryData,getRequestData,requestToner,updateInventory,getColorFromToner,getAllColors,addNewToner } from "./controller.js";
+import { adminPatch,adminStatus,adminUser,adminUsers,departments,login,logout,me,profilePatch,register } from "./auth-controller.js";
+import { authLimiter,requireAuth,requireRoles } from "./auth.js";
 
-import {
-  getTonerData,
-  getInventoryData,
-  getRequestData,
-  requestToner,
-  updateInventory,
-  getColorFromToner,
-  getAllColors,
-  addNewToner,
-} from "./controller.js";
+const router=express.Router();
+const admins=requireRoles("ICT Administrator","Super Administrator");
+const superAdmins=requireRoles("Super Administrator");
+router.get("/departments",departments);
+router.post("/auth/register",register);
+router.post("/auth/login",authLimiter,login);
+router.post("/auth/logout",logout);
+router.get("/auth/me",requireAuth,me);
+router.get("/users/profile",requireAuth,me);
+router.patch("/users/profile",requireAuth,profilePatch);
+router.get("/admin/users",requireAuth,admins,adminUsers);
+router.get("/admin/users/:id",requireAuth,admins,adminUser);
+router.patch("/admin/users/:id",requireAuth,superAdmins,adminPatch);
+router.patch("/admin/users/:id/status",requireAuth,superAdmins,adminStatus);
 
-const router = express.Router();
-
-// admin routes
-router.get("/inventory", getInventoryData);
-router.get("/requests", getRequestData);
-router.post("/addToInventory", updateInventory);
-router.post("/addToner", addNewToner);
-
-// request Routes
-router.get("/toners", getTonerData);
-router.get("/colors", getColorFromToner);
-router.post("/request", requestToner);
-router.get("/allColors", getAllColors);
-
+router.get("/inventory",requireAuth,admins,getInventoryData);
+router.get("/requests",requireAuth,getRequestData);
+router.post("/addToInventory",requireAuth,admins,updateInventory);
+router.post("/addToner",requireAuth,admins,addNewToner);
+router.get("/toners",getTonerData);
+router.get("/colors",getColorFromToner);
+router.post("/request",requireAuth,requestToner);
+router.get("/allColors",getAllColors);
 export default router;
