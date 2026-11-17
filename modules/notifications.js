@@ -11,6 +11,20 @@ const escapeHtml = (s) =>
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
+export async function sendPasswordResetEmail({ to, firstName, resetUrl }) {
+  if (!resend || !process.env.RESEND_FROM_EMAIL) {
+    throw new Error("Password reset email is not configured.");
+  }
+  const safeName = escapeHtml(firstName || "there");
+  const safeUrl = escapeHtml(resetUrl);
+  const result = await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL,
+    to,
+    subject: "Reset your TRMS password",
+    html: `<div style="font-family:Arial,sans-serif;color:#1d2939;max-width:560px;margin:auto"><h2 style="color:#5a287d">Great Nigeria Insurance | TRMS</h2><p>Hello ${safeName},</p><p>We received a request to reset your TRMS password. Use the button below within 30 minutes.</p><p><a href="${safeUrl}" style="display:inline-block;background:#5a287d;color:#fff;text-decoration:none;padding:12px 18px;border-radius:7px">Reset password</a></p><p>If you did not request this change, you can ignore this email.</p><p style="font-size:12px;color:#777">For your security, this link can only be used once.</p></div>`,
+  });
+  if (result.error) throw new Error(result.error.message);
+}
 const template = (r, requester = false) =>
   `<div style="font-family:Arial,sans-serif;color:#1d2939"><h2 style="color:#154734">Great Nigeria Insurance | TRMS</h2><h3>${requester ? "Toner request received" : "New toner request requires attention"}</h3><table>${Object.entries(
     {

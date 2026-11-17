@@ -1,4 +1,4 @@
--- Active: 1785854559166@@127.0.0.1@5432@toner_request
+-- Active: 1788791958691@@aws-1-eu-west-1.pooler.supabase.com@5432@toner_request
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS department (

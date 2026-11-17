@@ -1,7 +1,7 @@
 import express from "express";
 import { getTonerData,getInventoryData,getRequestData,requestToner,updateInventory,getColorFromToner,getAllColors,addNewToner } from "./controller.js";
-import { adminPatch,adminStatus,adminUser,adminUsers,departments,login,logout,me,profilePatch,register } from "./auth-controller.js";
-import { authLimiter,requireAuth,requireRoles } from "./auth.js";
+import { adminPatch,adminStatus,adminUser,adminUsers,departments,forgotPassword,login,logout,me,profilePatch,register,resetPassword } from "./auth-controller.js";
+import { authLimiter,passwordResetLimiter,requireAuth,requireRoles } from "./auth.js";
 
 const router=express.Router();
 const admins=requireRoles("ICT Administrator","Super Administrator");
@@ -9,6 +9,8 @@ const superAdmins=requireRoles("Super Administrator");
 router.get("/departments",departments);
 router.post("/auth/register",register);
 router.post("/auth/login",authLimiter,login);
+router.post("/auth/forgot-password",passwordResetLimiter,forgotPassword);
+router.post("/auth/reset-password",passwordResetLimiter,resetPassword);
 router.post("/auth/logout",logout);
 router.get("/auth/me",requireAuth,me);
 router.get("/users/profile",requireAuth,me);

@@ -1,4 +1,5 @@
 import pool from "./config.js";
+import { createHash, randomBytes } from "node:crypto";
 import {
   clearSession,
   createSession,
@@ -6,6 +7,107 @@ import {
   safeUser,
   verifyPassword,
 } from "./auth.js";
+import { sendPasswordResetEmail } from "./notifications.js";
+
+const passwordResetMessage =
+  "If an active account matches that email address, we have sent a password reset link.";
+const hashResetToken = (token) =>
+  createHash("sha256").update(token).digest("hex");
+
+export const forgotPassword = async (req, res, next) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Enter a valid email address." });
+  }
+  try {
+    const { rows } = await pool.query(
+      "SELECT user_id,first_name,email FROM app_user WHERE email=$1 AND is_active=true",
+      [email],
+    );
+    const user = rows[0];
+    if (user) {
+      const token = randomBytes(32).toString("hex");
+      const tokenHash = hashResetToken(token);
+      await pool.query(
+        "UPDATE password_reset_token SET used_at=now() WHERE user_id=$1 AND used_at IS NULL",
+        [user.user_id],
+      );
+      await pool.query(
+        "INSERT INTO password_reset_token(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '30 minutes')",
+        [user.user_id, tokenHash],
+      );
+      try {
+        const frontendUrl =
+          process.env.FRONTEND_URL ||
+          process.env.FRONTEND_ORIGIN?.split(",")[0]?.trim() ||
+          "http://localhost:5173";
+        const resetUrl = new URL("/reset-password", frontendUrl);
+        resetUrl.searchParams.set("token", token);
+        await sendPasswordResetEmail({
+          to: user.email,
+          firstName: user.first_name,
+          resetUrl: resetUrl.toString(),
+        });
+      } catch (emailError) {
+        console.error("TRMS password reset email delivery failed", {
+          userId: user.user_id,
+          error: emailError.message,
+        });
+        await pool.query(
+          "UPDATE password_reset_token SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL",
+          [tokenHash],
+        );
+      }
+    }
+    return res.json({ success: true, message: passwordResetMessage });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resetPassword = async (req, res, next) => {
+  const token = String(req.body?.token || "");
+  const password = String(req.body?.password || "");
+  if (!/^[a-f0-9]{64}$/i.test(token)) {
+    return res.status(400).json({ success: false, message: "This reset link is invalid or expired. Request a new one." });
+  }
+  if (password.length < 10 || password.length > 72) {
+    return res.status(400).json({ success: false, message: "Password must be between 10 and 72 characters." });
+  }
+  const client = await pool.connect();
+  try {
+    const tokenHash = hashResetToken(token);
+    const passwordHash = await hashPassword(password);
+    await client.query("BEGIN");
+    const { rows } = await client.query(
+      `SELECT t.reset_id,t.user_id,u.is_active FROM password_reset_token t JOIN app_user u USING(user_id) WHERE t.token_hash=$1 AND t.used_at IS NULL AND t.expires_at>now() FOR UPDATE OF t,u`,
+      [tokenHash],
+    );
+    const reset = rows[0];
+    if (!reset || !reset.is_active) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false, message: "This reset link is invalid or expired. Request a new one." });
+    }
+    await client.query(
+      "UPDATE app_user SET password_hash=$1,auth_version=auth_version+1,updated_at=now() WHERE user_id=$2",
+      [passwordHash, reset.user_id],
+    );
+    await client.query(
+      "UPDATE password_reset_token SET used_at=now() WHERE user_id=$1 AND used_at IS NULL",
+      [reset.user_id],
+    );
+    await client.query("COMMIT");
+    clearSession(res);
+    return res.json({ success: true, message: "Password reset successfully. Please sign in with your new password." });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    next(error);
+  } finally {
+    client.release();
+  }
+};
 
 export const departments = async (req, res, next) => {
   try {
@@ -98,7 +200,7 @@ export const login = async (req, res, next) => {
         .toLowerCase(),
       password = String(req.body?.password || "");
     const { rows } = await pool.query(
-      "SELECT user_id,password_hash,is_active FROM app_user WHERE email=$1",
+      "SELECT user_id,password_hash,is_active,auth_version FROM app_user WHERE email=$1",
       [email],
     );
     const row = rows[0];
@@ -114,7 +216,7 @@ export const login = async (req, res, next) => {
       "UPDATE app_user SET last_login_at=now() WHERE user_id=$1",
       [row.user_id],
     );
-    createSession(res, row.user_id);
+    createSession(res, row.user_id, row.auth_version);
     res.json({ success: true, user: await safeUser(row.user_id) });
   } catch (e) {
     next(e);
